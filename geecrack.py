@@ -11,6 +11,10 @@ from PIL import Image
 # 鼠标操作
 from selenium.webdriver.common.action_chains import ActionChains
 
+import time,re,requests,random
+from io import  BytesIO 
+import json
+
 
 def save_base64img(data_str, save_name):
     """
@@ -106,7 +110,7 @@ def is_pixel_equal(img1, img2, x, y):
         return False
 
 
-def get_offset(full_bg_path, bg_path, offset=35):
+def get_offset(full_bg, bg, offset=35):
     """
     获取缺口偏移量
     :param full_bg_path: 不带缺口图片路径
@@ -114,8 +118,8 @@ def get_offset(full_bg_path, bg_path, offset=35):
     :param offset: 偏移量， 默认 35
     :return:
     """
-    full_bg = Image.open(full_bg_path)
-    bg = Image.open(bg_path)
+    # full_bg = Image.open(full_bg_path)
+    # bg = Image.open(bg_path)
     for i in range(offset, full_bg.size[0]):
         for j in range(full_bg.size[1]):
             if not is_pixel_equal(full_bg, bg, i, j):
@@ -132,29 +136,28 @@ def get_track(distance):
     """
     track = []
     current = 0
-    mid = distance * 3 / 4
-    t = random.randint(2, 3) / 10
-    v = 0
-    while current < distance:
-        if current < mid:
-            a = 2
-        else:
-            a = -3
-        v0 = v
-        v = v0 + a * t
-        move = v0 * t + 1 / 2 * a * t * t
-        current += move
-        track.append(round(move))
+    if distance <= 5 :
+        while current < distance:
+            move=1
+            track.append(round(move))
+            current += round(move)
+    else:
+        move = round(distance / 5.0)
+        while current < distance:
+            if distance - current < move:
+                move = distance - current
+            track.append(move)
+            current += move
     return track
 
 
-def drag_the_ball(driver, track):
+def drag_the_ball(driver, track, slider):
     """
     根据运动轨迹拖拽
     :param driver: webdriver 对象
     :param track: 运动轨迹
     """
-    slider = get_slider(driver)
+    # slider = get_slider(driver)
     ActionChains(driver).click_and_hold(slider).perform()
     while track:
         x = random.choice(track)
@@ -165,15 +168,80 @@ def drag_the_ball(driver, track):
     imitate = ActionChains(driver).move_by_offset(xoffset=-2, yoffset=0)
     time.sleep(0.015)
     imitate.perform()
-    time.sleep(random.randint(6, 10) / 10)
+    time.sleep(random.randint(6, 10) / 50.0)
     imitate.perform()
     time.sleep(0.04)
     imitate.perform()
     time.sleep(0.012)
     imitate.perform()
     time.sleep(0.019)
-    imitate.perform()
-    time.sleep(0.033)
+    # imitate.perform()
+    # time.sleep(0.033)
     ActionChains(driver).move_by_offset(xoffset=1, yoffset=0).perform()
     # 放开圆球
-    ActionChains(driver).pause(random.randint(6, 14) / 10).release(slider).perform()
+    ActionChains(driver).pause(random.randint(6, 14) / 10.0).release(slider).perform()
+
+def get_merge_image(filename,location_list):
+    '''
+    合并图片
+    filename: 下载的图片
+    location_list: 位置列表
+    ''' 
+    im = filename
+    new_im = Image.new('RGB', (260,116))
+    im_list_upper=[]
+    im_list_down=[]
+    for location in location_list:
+        if location['y']==-58:
+            pass
+            im_list_upper.append(im.crop((abs(location['x']),58,abs(location['x'])+10,166)))
+        if location['y']==0:
+            pass
+            im_list_down.append(im.crop((abs(location['x']),0,abs(location['x'])+10,58)))
+    new_im = Image.new('RGB', (260,116))
+    x_offset = 0
+    for im in im_list_upper:
+        new_im.paste(im, (x_offset,0))
+        x_offset += im.size[0]
+    x_offset = 0
+    for im in im_list_down:
+        new_im.paste(im, (x_offset,58))
+        x_offset += im.size[0]
+    return new_im
+def get_image(driver,div):
+    '''
+    下载并还原图片
+    :driver:webdriver
+    :div:图片的div
+    '''
+    pass
+    #找到图片所在的div
+    background_images=driver.find_elements_by_xpath(div)
+    location_list=[]
+    imageurl=''
+    for background_image in background_images:
+        location={}
+        #在html里面解析出小图片的url地址，还有长高的数值
+        location['x']=int(re.findall("background-image: url\(\"(.*)\"\); background-position: (.*)px (.*)px;",background_image.get_attribute('style'))[0][1])
+        location['y']=int(re.findall("background-image: url\(\"(.*)\"\); background-position: (.*)px (.*)px;",background_image.get_attribute('style'))[0][2])
+        imageurl=re.findall("background-image: url\(\"(.*)\"\); background-position: (.*)px (.*)px;",background_image.get_attribute('style'))[0][0]
+        location_list.append(location)
+    imageurl=imageurl.replace("webp","jpg")
+    r = requests.get(imageurl)
+    jpgfile = Image.open(BytesIO(r.content))
+    #重新合并图片 
+    image=get_merge_image(jpgfile,location_list )
+    return image
+
+def save_cookies(driver,cookie_path):
+    cookies = driver.get_cookies()
+    str = ""
+    for cookie in cookies:
+        str = str + cookie['name'] +"=" + cookie['value'] + "; "
+    str += "\n"
+
+    file = open(cookie_path, 'wb')
+    file.write(str)
+    file.close()
+    print(str)
+    pass
